@@ -36,45 +36,44 @@ public class FormTokoBuku extends javax.swing.JFrame {
      * Creates new form FormTokoBuku
      */
     
-    private String generateNoFaktur() {
+private void generateNoFaktur() {
     Connection conn = koneksi.getConnection();
     String noFaktur = null;
-    
+
     if (conn != null) {
         try {
-            // Ambil nomor faktur terakhir
-            String sqlSelect = "SELECT No_Faktur_Akhir FROM tbl_nofak LIMIT 1";
-            PreparedStatement psSelect = conn.prepareStatement(sqlSelect);
-            ResultSet rs = psSelect.executeQuery();
-            
-            int nextNumber = 1; // Default mulai dari 1
-            if (rs.next()) {
-                nextNumber = rs.getInt("No_Faktur_Akhir") + 1;
+            // Ambil semua No_Faktur dari tabel transaksi
+            String sql = "SELECT No_Faktur FROM transaksi";
+            PreparedStatement ps = conn.prepareStatement(sql);
+            ResultSet rs = ps.executeQuery();
+
+            int maxNumber = 0;
+
+            while (rs.next()) {
+                String nf = rs.getString("No_Faktur"); // misal F-0006
+                // Ambil angka setelah F-
+                int num = Integer.parseInt(nf.substring(2));
+                if (num > maxNumber) maxNumber = num;
             }
+
             rs.close();
-            psSelect.close();
-            
-            // Update nomor faktur terakhir
-            String sqlUpdate = "INSERT INTO tbl_nofak (No_Faktur_Akhir) VALUES (?) ON DUPLICATE KEY UPDATE No_Faktur_Akhir = ?";
-            PreparedStatement psUpdate = conn.prepareStatement(sqlUpdate);
-            psUpdate.setInt(1, nextNumber);
-            psUpdate.setInt(2, nextNumber);
-            psUpdate.executeUpdate();
-            psUpdate.close();
-            
-            // Format sebagai F-0000
+            ps.close();
+
+            // Nomor berikutnya
+            int nextNumber = maxNumber + 1;
             noFaktur = String.format("F-%04d", nextNumber);
-            
+
             conn.close();
-            
+
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
-    
-    return noFaktur;
+
+    fieldNoFaktur.setText(noFaktur);
 }
-    
+
+
     private boolean hapusTransaksi(String noFaktur) {
 
     Connection conn = koneksi.getConnection();
@@ -167,7 +166,7 @@ public class FormTokoBuku extends javax.swing.JFrame {
         ImageIcon gambar = new ImageIcon(getClass().getResource(path));
         
         Image img = gambar.getImage();
-        Image resizedImg = img.getScaledInstance(100, 150, Image.SCALE_SMOOTH);
+        Image resizedImg = img.getScaledInstance(100, 145, Image.SCALE_SMOOTH);
         
         gambar = new ImageIcon(resizedImg);
         
@@ -247,9 +246,15 @@ public class FormTokoBuku extends javax.swing.JFrame {
     }
 }
     private long hitungTotal() {
-    int jumlah = (int) spinnerJumlah.getValue();
-    int diskon = (int) spinnerDiskon.getValue(); // persen
-    long harga = Long.parseLong(fieldHarga.getText());
+    String txtHarga = fieldHarga.getText();
+
+    if (txtHarga == null || txtHarga.trim().isEmpty()) {
+        return 0L;
+    }
+
+    int jumlah = ((Number) spinnerJumlah.getValue()).intValue();
+    int diskon = ((Number) spinnerDiskon.getValue()).intValue();
+    long harga = Long.parseLong(txtHarga);
 
     long subtotal = jumlah * harga;
     long potongan = subtotal * diskon / 100;
@@ -258,28 +263,24 @@ public class FormTokoBuku extends javax.swing.JFrame {
     return total;
 }
     
-    private void bersihkanForm() {
+private void bersihkanForm() {
     fieldNoFaktur.setText("");
     fieldISBN.setText("");
     fieldJudul.setText("");
-    fieldHarga.setText("");
+    fieldHarga.setText("0");
 
-    spinnerJumlah.setValue(1);
+    spinnerJumlah.setValue(0);
     spinnerDiskon.setValue(0);
     spinnerTotal.setValue(0L);
     spinnerBayar.setValue(0L);
     spinnerKembalian.setValue(0L);
 
-    fieldTanggal.setDate(new Date()); // set ke hari ini
-
+    fieldTanggal.setDate(new Date());
     tableDataPembelian.clearSelection();
 
-    fieldNoFaktur.setEditable(true);
-
-    tombolSave.setEnabled(true);
-    tombolEdit.setEnabled(false);
-    tombolDelete.setEnabled(false);
+    isEdit = false;
 }
+
 
     
     private void updateTotal() {
@@ -289,15 +290,18 @@ public class FormTokoBuku extends javax.swing.JFrame {
 }
 
     private void updateKembalian() {
-    long total = (Long) spinnerTotal.getValue();
-    long bayar = (Long) spinnerBayar.getValue();
-    long kembalian = bayar - total;
-    spinnerKembalian.setValue(kembalian);
+        long bayar = ((Number) spinnerBayar.getValue()).longValue();
+        long total = ((Number) spinnerTotal.getValue()).longValue();
+        long kembalian = bayar - total;
+
+        spinnerKembalian.setValue(kembalian); // autoboxing ke Long
 }
+    private boolean isEdit = false;
 
  
     public FormTokoBuku() {
         initComponents();
+        generateNoFaktur();
         // Set spinner models to handle long values
         spinnerJumlah.setModel(new SpinnerNumberModel(1, 1, 1000, 1));
         spinnerDiskon.setModel(new SpinnerNumberModel(0, 0, 100, 1));
@@ -333,26 +337,6 @@ public class FormTokoBuku extends javax.swing.JFrame {
 
         tombolNewTransaction.addActionListener(e -> bersihkanForm());
 
-        tableDataPembelian.addMouseListener(new MouseAdapter() {
-           @Override
-            public void mouseClicked(MouseEvent e) {
-                int row = tableDataPembelian.getSelectedRow();
-
-                if (row != -1) {
-                fieldNoFaktur.setText(tableDataPembelian.getValueAt(row, 0).toString());
-                fieldTanggal.setDate((Date) tableDataPembelian.getValueAt(row, 1));
-                fieldISBN.setText(tableDataPembelian.getValueAt(row, 2).toString());
-                fieldJudul.setText(tableDataPembelian.getValueAt(row, 3).toString());
-                spinnerJumlah.setValue(Integer.parseInt(
-                tableDataPembelian.getValueAt(row, 4).toString()
-                ));
-                fieldHarga.setText(tableDataPembelian.getValueAt(row, 5).toString());
-            spinnerTotal.setValue(Long.parseLong(
-                tableDataPembelian.getValueAt(row, 6).toString()
-            ));
-        }
-    }
-});
     }
 
     /**
@@ -448,6 +432,11 @@ public class FormTokoBuku extends javax.swing.JFrame {
         tombolNewTransaction.setForeground(new java.awt.Color(218, 255, 251));
         tombolNewTransaction.setText("New Transaction");
         tombolNewTransaction.setCursor(new java.awt.Cursor(java.awt.Cursor.HAND_CURSOR));
+        tombolNewTransaction.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                tombolNewTransactionActionPerformed(evt);
+            }
+        });
 
         tombolSave.setBackground(new java.awt.Color(23, 107, 135));
         tombolSave.setFont(new java.awt.Font("Tahoma", 1, 16)); // NOI18N
@@ -536,6 +525,7 @@ public class FormTokoBuku extends javax.swing.JFrame {
         jLabel4.setForeground(new java.awt.Color(218, 255, 251));
         jLabel4.setText("Tanggal");
 
+        fieldNoFaktur.setEditable(false);
         fieldNoFaktur.setFont(new java.awt.Font("Tahoma", 0, 12)); // NOI18N
         fieldNoFaktur.setMargin(new java.awt.Insets(4, 8, 4, 8));
 
@@ -557,12 +547,14 @@ public class FormTokoBuku extends javax.swing.JFrame {
         fieldISBN.setFont(new java.awt.Font("Tahoma", 0, 12)); // NOI18N
         fieldISBN.setText("22345678");
 
+        fieldJudul.setEditable(false);
         fieldJudul.setFont(new java.awt.Font("Tahoma", 0, 12)); // NOI18N
 
         jLabel9.setFont(new java.awt.Font("Tahoma", 0, 12)); // NOI18N
         jLabel9.setForeground(new java.awt.Color(218, 255, 251));
         jLabel9.setText("Judul");
 
+        fieldHarga.setEditable(false);
         fieldHarga.setFont(new java.awt.Font("Tahoma", 0, 12)); // NOI18N
 
         jLabel10.setFont(new java.awt.Font("Tahoma", 0, 12)); // NOI18N
@@ -641,6 +633,7 @@ public class FormTokoBuku extends javax.swing.JFrame {
         jLabel13.setText("Diskon %");
 
         spinnerTotal.setFont(new java.awt.Font("Tahoma", 0, 12)); // NOI18N
+        spinnerTotal.setEnabled(false);
 
         jLabel14.setFont(new java.awt.Font("Tahoma", 0, 12)); // NOI18N
         jLabel14.setForeground(new java.awt.Color(218, 255, 251));
@@ -653,6 +646,7 @@ public class FormTokoBuku extends javax.swing.JFrame {
         spinnerBayar.setFont(new java.awt.Font("Tahoma", 0, 12)); // NOI18N
 
         spinnerKembalian.setFont(new java.awt.Font("Tahoma", 0, 12)); // NOI18N
+        spinnerKembalian.setEnabled(false);
 
         jLabel16.setFont(new java.awt.Font("Tahoma", 0, 12)); // NOI18N
         jLabel16.setForeground(new java.awt.Color(218, 255, 251));
@@ -780,7 +774,7 @@ public class FormTokoBuku extends javax.swing.JFrame {
                 .addComponent(jPanel3, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                 .addComponent(jPanel4, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, 32, Short.MAX_VALUE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, 22, Short.MAX_VALUE)
                 .addComponent(jLabel5)
                 .addContainerGap())
         );
@@ -793,12 +787,7 @@ public class FormTokoBuku extends javax.swing.JFrame {
 
     private void tombolGenerateActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_tombolGenerateActionPerformed
         // TODO add your handling code here:
-        String noFaktur = generateNoFaktur();
-    if (noFaktur != null) {
-        fieldNoFaktur.setText(noFaktur);
-    } else {
-        JOptionPane.showMessageDialog(this, "Gagal generate nomor faktur!");
-    }
+        generateNoFaktur();
     }//GEN-LAST:event_tombolGenerateActionPerformed
 
     private void tombolExitActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_tombolExitActionPerformed
@@ -810,67 +799,81 @@ public class FormTokoBuku extends javax.swing.JFrame {
     }//GEN-LAST:event_tombolExitActionPerformed
 
     private void tombolSaveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_tombolSaveActionPerformed
-        // TODO add your handling code here:
-        try {
+     try {
         String noFaktur = fieldNoFaktur.getText();
         String isbn = fieldISBN.getText();
-        int jumlah = (int) spinnerJumlah.getValue();
-        long total = (Long) spinnerTotal.getValue();
-        Date tanggal = fieldTanggal.getDate(); // tanggal hari ini
+        int jumlah = ((Number) spinnerJumlah.getValue()).intValue();
+        long total = ((Number) spinnerTotal.getValue()).longValue();
+        Date tanggal = fieldTanggal.getDate();
 
         if (noFaktur.isEmpty() || isbn.isEmpty()) {
             JOptionPane.showMessageDialog(this, "No Faktur dan ISBN wajib diisi!");
             return;
         }
 
-        boolean berhasil = simpanTransaksi(noFaktur, tanggal, isbn, jumlah, total);
+        boolean berhasil = isEdit
+            ? updateTransaksi(noFaktur, isbn, jumlah, total)
+            : simpanTransaksi(noFaktur, tanggal, isbn, jumlah, total);
+
+        JOptionPane.showMessageDialog(
+            this,
+            berhasil
+                ? (isEdit ? "Data berhasil diupdate!" : "Transaksi berhasil disimpan!")
+                : "Proses gagal!"
+        );
 
         if (berhasil) {
-            JOptionPane.showMessageDialog(this, "Transaksi berhasil disimpan!");
-            loadData(); // refresh JTable
-            bersihkanForm();
-        } else {
-            JOptionPane.showMessageDialog(this, "Gagal menyimpan transaksi!");
-        }
-
-    } catch (NumberFormatException e) {
-        JOptionPane.showMessageDialog(this, "Jumlah dan Total harus angka!");
-    }
-    }//GEN-LAST:event_tombolSaveActionPerformed
-
-    private void tombolEditActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_tombolEditActionPerformed
-        // TODO add your handling code here:
-        try {
-        String noFaktur = fieldNoFaktur.getText();
-        String isbn = fieldISBN.getText();
-        int jumlah = (int) spinnerJumlah.getValue();
-        long total = (long) spinnerTotal.getValue();
-
-        boolean berhasil = updateTransaksi(noFaktur, isbn, jumlah, total);
-
-        if (berhasil) {
-            JOptionPane.showMessageDialog(this, "Data berhasil diupdate!");
             loadData();
-        } else {
-            JOptionPane.showMessageDialog(this, "Gagal update data!");
+            bersihkanForm();
         }
 
     } catch (Exception e) {
-        JOptionPane.showMessageDialog(this, "Input tidak valid!");
+        JOptionPane.showMessageDialog(this, "Terjadi kesalahan input!");
+        e.printStackTrace();
     }
+     generateNoFaktur();
+    }//GEN-LAST:event_tombolSaveActionPerformed
+
+    private void tombolEditActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_tombolEditActionPerformed
+ 
+    int row = tableDataPembelian.getSelectedRow();
+
+    if (row == -1) {
+        JOptionPane.showMessageDialog(this, "Pilih data yang akan diedit!");
+        return;
+    }
+
+    fieldNoFaktur.setText(tableDataPembelian.getValueAt(row, 0).toString());
+    fieldTanggal.setDate((Date) tableDataPembelian.getValueAt(row, 1));
+    fieldISBN.setText(tableDataPembelian.getValueAt(row, 2).toString());
+    fieldJudul.setText(tableDataPembelian.getValueAt(row, 3).toString());
+
+    spinnerJumlah.setValue(
+        ((Number) tableDataPembelian.getValueAt(row, 4)).intValue()
+    );
+
+    fieldHarga.setText(tableDataPembelian.getValueAt(row, 5).toString());
+
+    spinnerTotal.setValue(
+        ((Number) tableDataPembelian.getValueAt(row, 6)).longValue()
+    );
+
+    // AKTIFKAN MODE EDIT
+    isEdit = true;
+
 
     }//GEN-LAST:event_tombolEditActionPerformed
 
     private void tombolDeleteActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_tombolDeleteActionPerformed
-        // TODO add your handling code here:
-        int row = tableDataPembelian.getSelectedRow();
+    int row = tableDataPembelian.getSelectedRow();
 
     if (row == -1) {
         JOptionPane.showMessageDialog(this, "Pilih data terlebih dahulu!");
         return;
     }
 
-    String noFaktur = fieldNoFaktur.getText();
+    // Ambil No Faktur dari JTable
+    String noFaktur = tableDataPembelian.getValueAt(row, 0).toString();
 
     int confirm = JOptionPane.showConfirmDialog(
         this,
@@ -880,7 +883,6 @@ public class FormTokoBuku extends javax.swing.JFrame {
     );
 
     if (confirm == JOptionPane.YES_OPTION) {
-
         boolean berhasil = hapusTransaksi(noFaktur);
 
         if (berhasil) {
@@ -891,8 +893,14 @@ public class FormTokoBuku extends javax.swing.JFrame {
             JOptionPane.showMessageDialog(this, "Gagal menghapus data!");
         }
     }
-
+    generateNoFaktur();
     }//GEN-LAST:event_tombolDeleteActionPerformed
+
+    private void tombolNewTransactionActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_tombolNewTransactionActionPerformed
+        // TODO add your handling code here:
+        bersihkanForm();
+        generateNoFaktur();
+    }//GEN-LAST:event_tombolNewTransactionActionPerformed
 
     /**
      * @param args the command line arguments
